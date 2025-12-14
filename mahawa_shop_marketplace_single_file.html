@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Mahawa Shop — Marketplace</title>
+  <style>
+    /* Simple reset */
+    *{box-sizing:border-box}body{font-family:Inter,system-ui,Segoe UI,Roboto,'Helvetica Neue',Arial;margin:0;background:#f7f7fb;color:#111}
+    header{background:linear-gradient(90deg,#ff7a18,#ffb199);padding:18px 24px;display:flex;align-items:center;justify-content:space-between}
+    .brand{display:flex;align-items:center;gap:12px}
+    .logo{width:48px;height:48px;background:#fff;border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:700;color:#ff6a00}
+    nav a{margin-left:12px;text-decoration:none;color:#fff;font-weight:600}
+    .container{max-width:1100px;margin:22px auto;padding:0 18px}
+    .controls{display:flex;gap:12px;align-items:center;margin-bottom:14px}
+    .search{flex:1}
+    input,select,button,textarea{font-size:14px;padding:10px;border-radius:8px;border:1px solid #ddd}
+    button{cursor:pointer}
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}
+    .card{background:#fff;border-radius:12px;padding:12px;box-shadow:0 6px 18px rgba(16,24,40,0.06);display:flex;flex-direction:column}
+    .card img{width:100%;height:160px;object-fit:cover;border-radius:8px}
+    .card h3{margin:8px 0 0;font-size:16px}
+    .price{margin-top:6px;font-weight:700;color:#0b6a34}
+    .card .actions{margin-top:auto;display:flex;gap:8px}
+    .cart-btn{position:fixed;right:18px;bottom:18px;background:#ff6a00;color:#fff;padding:12px 16px;border-radius:999px;box-shadow:0 8px 20px rgba(16,24,40,0.12);font-weight:700}
+    .cart-panel{position:fixed;right:18px;bottom:80px;width:360px;max-height:70vh;background:#fff;border-radius:12px;padding:12px;box-shadow:0 10px 30px rgba(16,24,40,0.12);overflow:auto;display:none}
+    .cart-item{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid #eee}
+    .admin-toggle{background:transparent;border:2px dashed rgba(255,255,255,0.3);color:#fff;padding:8px;border-radius:8px}
+
+    /* responsive */
+    @media(max-width:600px){.controls{flex-direction:column;align-items:stretch}.cart-panel{right:10px;left:10px;width:auto}}
+    .badge{background:#222;color:#fff;padding:4px 8px;border-radius:999px;font-size:12px}
+    .modal{position:fixed;inset:0;background:rgba(0,0,0,0.45);display:none;align-items:center;justify-content:center}
+    .modal .box{background:#fff;padding:18px;border-radius:10px;max-width:720px;width:100%;}
+    .small{font-size:13px;color:#666}
+    .inline{display:inline-block}
+    footer{margin-top:34px;padding:18px;text-align:center;color:#666}
+    .admin-panel{display:flex;flex-direction:column;gap:8px}
+    .pill{display:inline-block;padding:6px 10px;border-radius:999px;background:#f0f4ff;border:1px solid #e6edff}
+    .btn-primary{background:#ff6a00;color:#fff;border:none}
+    .btn-ghost{background:transparent;border:1px solid #ddd}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="logo">M</div>
+      <div>
+        <div style="font-weight:800;color:#fff;font-size:20px">Mahawa Shop</div>
+        <div class="small">Boutique en ligne — Produits locaux & créations</div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <nav>
+        <a href="#">Accueil</a>
+        <a href="#">Produits</a>
+        <a href="#">Contact</a>
+      </nav>
+      <button id="open-admin" class="admin-toggle">Admin</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="controls">
+      <input id="search" class="search" placeholder="Rechercher un produit, ex: robe, sac..." />
+      <select id="category-filter"><option value="">Toutes catégories</option></select>
+      <button id="btn-add" class="btn-primary">Ajouter un produit (admin)</button>
+    </section>
+
+    <section id="product-grid" class="grid"></section>
+
+    <button id="open-cart" class="cart-btn">Panier (<span id="cart-count">0</span>)</button>
+    <div id="cart-panel" class="cart-panel" aria-hidden="true">
+      <h3>Votre panier</h3>
+      <div id="cart-items"></div>
+      <div style="margin-top:12px;display:flex;justify-content:space-between;align-items:center">
+        <div><strong>Total:</strong> <span id="cart-total">0</span> GNF</div>
+        <button id="checkout-btn" class="btn-primary">Commander</button>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    © <span id="shop-name-foot">Mahawa Shop</span> — Designed for Guinea
+  </footer>
+
+  <!-- Modals -->
+  <div id="modal" class="modal" aria-hidden="true">
+    <div class="box" id="modal-box"></div>
+  </div>
+
+  <script>
+    /* --- Demo marketplace single-file app ---
+       Features implemented:
+        - Product grid, search, category filter
+        - Cart (localStorage) with quantity updates
+        - Simple admin panel (password-protected demo) to add/edit/delete products
+        - Checkout collects contact and displays payment instructions (editable in admin)
+        - Export/Import product JSON for backups
+       NOTE: This is a front-end-only demo. For real payments you must integrate a payment gateway and server.
+    */
+
+    const DEFAULT_PAYMENT_PHONE = '+224613629282'; // admin can change
+
+    // sample products
+    const sampleProducts = [
+      {id:1,title:'Robe traditionnelle',price:150000,category:'Vêtements',img:'https://images.unsplash.com/photo-1520975923436-5e1b0c1f12d9?q=80&w=800&auto=format&fit=crop&crop=faces'},
+      {id:2,title:'Sac artisanal',price:45000,category:'Accessoires',img:'https://images.unsplash.com/photo-1555529771-0a5c8e41c79e?q=80&w=800&auto=format&fit=crop&crop=faces'},
+      {id:3,title:'Bijou en perles',price:25000,category:'Bijoux',img:'https://images.unsplash.com/photo-1560347876-aeef00ee58a1?q=80&w=800&auto=format&fit=crop&crop=faces'},
+      {id:4,title:'T-shirt Mahawa',price:35000,category:'Vêtements',img:'https://images.unsplash.com/photo-1541099649105-f69ad21f3246?q=80&w=800&auto=format&fit=crop&crop=faces'}
+    ];
+
+    let STATE = {
+      products: JSON.parse(localStorage.getItem('ms_products')||'null') || sampleProducts,
+      cart: JSON.parse(localStorage.getItem('ms_cart')||'{}'),
+      paymentPhone: localStorage.getItem('ms_paymentPhone') || DEFAULT_PAYMENT_PHONE,
+      shopName: localStorage.getItem('ms_shopName') || 'Mahawa Shop'
+    };
+
+    // utility
+    const $ = sel => document.querySelector(sel);
+    const $$ = sel => Array.from(document.querySelectorAll(sel));
+
+    function saveState(){
+      localStorage.setItem('ms_products', JSON.stringify(STATE.products));
+      localStorage.setItem('ms_cart', JSON.stringify(STATE.cart));
+      localStorage.setItem('ms_paymentPhone', STATE.paymentPhone);
+      localStorage.setItem('ms_shopName', STATE.shopName);
+    }
+
+    function renderCategories(){
+      const cats = [''].concat([...new Set(STATE.products.map(p=>p.category))]);
+      const sel = $('#category-filter'); sel.innerHTML='';
+      cats.forEach(c=>{const opt=document.createElement('option');opt.value=c;opt.textContent=c||'Toutes catégories';sel.appendChild(opt)})
+    }
+
+    function renderProducts(){
+      const grid = $('#product-grid'); grid.innerHTML='';
+      const q = $('#search').value.trim().toLowerCase();
+      const cat = $('#category-filter').value;
+      const filtered = STATE.products.filter(p=>{
+        if(cat && p.category!==cat) return false;
+        if(!q) return true;
+        return (p.title+p.category+(p.description||'')).toLowerCase().includes(q);
+      });
+      if(filtered.length===0){grid.innerHTML='<div class="small">Aucun produit trouvé. Utilisez le panneau admin pour ajouter des produits.</div>';return}
+      filtered.forEach(p=>{
+        const card = document.createElement('div');card.className='card';
+        card.innerHTML = `
+          <img src="${p.img}" alt="${escapeHtml(p.title)}" loading="lazy"/>
+          <h3>${escapeHtml(p.title)}</h3>
+          <div class="small">${escapeHtml(p.category)}</div>
+          <div class="price">${formatNumber(p.price)} GNF</div>
+          <div class="actions">
+            <button class="btn-ghost" data-id="${p.id}" onclick="viewProduct(${p.id})">Voir</button>
+            <button class="btn-primary" data-id="${p.id}" onclick="addToCart(${p.id})">Ajouter</button>
+          </div>
+        `;
+        grid.appendChild(card);
+      })
+    }
+
+    function formatNumber(n){ return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }
+    function escapeHtml(t){ return (t+'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }
+
+    window.addToCart = function(id){
+      const p = STATE.products.find(x=>x.id===id); if(!p) return;
+      STATE.cart[id] = (STATE.cart[id]||0)+1; saveState(); renderCart();
+      $('#open-cart').animate([{transform:'scale(0.95)'},{transform:'scale(1)'}],{duration:160})
+    }
+
+    function renderCart(){
+      const itemsEl = $('#cart-items'); itemsEl.innerHTML='';
+      let total=0; let count=0;
+      for(const idStr of Object.keys(STATE.cart)){
+        const id = parseInt(idStr); const qty = STATE.cart[id]; const p = STATE.products.find(x=>x.id===id);
+        if(!p) continue;
+        count+=qty; total+=p.price*qty;
+        const div = document.createElement('div'); div.className='cart-item';
+        div.innerHTML = `
+          <img src="${p.img}" style="width:56px;height:56px;object-fit:cover;border-radius:8px" />
+          <div style="flex:1">
+            <div style="font-weight:700">${escapeHtml(p.title)}</div>
+            <div class="small">${formatNumber(p.price)} GNF × <input type="number" min="1" value="${qty}" data-id="${id}" style="width:68px;margin-left:8px" class="qty-input"/></div>
+          </div>
+          <div style="text-align:right"><div>${formatNumber(p.price*qty)} GNF</div><button class="btn-ghost" data-id="${id}" onclick="removeFromCart(${id})">Supprimer</button></div>
+        `;
+        itemsEl.appendChild(div);
+      }
+      $('#cart-count').textContent = count;
+      $('#cart-total').textContent = formatNumber(total);
+      if(count===0) itemsEl.innerHTML='<div class="small">Votre panier est vide.</div>';
+      // attach qty change listeners
+      $$('.qty-input').forEach(inp=>inp.addEventListener('change',e=>{
+        const id = parseInt(e.target.dataset.id); let val = parseInt(e.target.value)||1; if(val<1) val=1; STATE.cart[id]=val; saveState(); renderCart();
+      }))
+    }
+
+    window.removeFromCart = function(id){ delete STATE.cart[id]; saveState(); renderCart(); }
+
+    // product view modal
+    window.viewProduct = function(id){
+      const p = STATE.products.find(x=>x.id===id); if(!p) return;
+      showModal(`<div style="display:flex;gap:12px">
+        <div style="flex:1"><img src="${p.img}" style="width:100%;height:320px;object-fit:cover;border-radius:8px"/></div>
+        <div style="flex:1">
+          <h2>${escapeHtml(p.title)}</h2>
+          <div class="small">${escapeHtml(p.category)}</div>
+          <div style="font-weight:800;margin-top:12px">${formatNumber(p.price)} GNF</div>
+          <p class="small" style="margin-top:8px">${escapeHtml(p.description||'Description non fournie.')}</p>
+          <div style="margin-top:14px"><button class="btn-primary" onclick="addToCart(${p.id});closeModal()">Ajouter au panier</button> <button class="btn-ghost" onclick="closeModal()">Fermer</button></div>
+        </div>
+      </div>`)
+    }
+
+    // modal helpers
+    function showModal(html){ $('#modal-box').innerHTML = html; $('#modal').style.display = 'flex'; $('#modal').ariaHidden = false }
+    function closeModal(){ $('#modal').style.display='none'; $('#modal').ariaHidden = true }
+    window.closeModal = closeModal;
+    $('#modal').addEventListener('click', e=>{ if(e.target===$('#modal')) closeModal() })
+
+    // admin
+    $('#open-admin').addEventListener('click', ()=>{
+      const html = `
+        <h3>Admin — Mahawa Shop</h3>
+        <div class="admin-panel">
+          <label>Mot de passe demo <input id="admin-pass" placeholder="Mot de passe"/></label>
+          <div class="small">Mot de passe demo: <span class="pill">admin123</span></div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button id="admin-login" class="btn-primary">Se connecter</button>
+            <button class="btn-ghost" onclick="closeModal()">Fermer</button>
+          </div>
+        </div>
+      `; showModal(html);
+      $('#admin-login').addEventListener('click', ()=>{
+        const pass = $('#admin-pass').value;
+        if(pass==='admin123') openAdminPanel(); else alert('Mot de passe incorrect (demo: admin123)')
+      })
+    })
+
+    function openAdminPanel(){
+      const html = `
+        <h2>Panel Admin</h2>
+        <div class="admin-panel">
+          <label>Nom de la boutique <input id="admin-shopname" value="${escapeHtml(STATE.shopName)}"/></label>
+          <label>Téléphone de paiement <input id="admin-phone" value="${escapeHtml(STATE.paymentPhone)}"/></label>
+          <div style="display:flex;gap:8px">
+            <button id="save-settings" class="btn-primary">Sauvegarder</button>
+            <button id="export-json" class="btn-ghost">Exporter produits (JSON)</button>
+            <button id="import-json" class="btn-ghost">Importer produits</button>
+          </div>
+          <hr />
+          <h3>Produits</h3>
+          <div id="admin-products-list"></div>
+          <hr />
+          <div style="display:flex;gap:8px">
+            <button id="admin-add-new" class="btn-primary">Ajouter un produit</button>
+            <button class="btn-ghost" onclick="closeModal()">Fermer</button>
+          </div>
+        </div>
+      `; showModal(html);
+
+      $('#save-settings').addEventListener('click', ()=>{
+        STATE.shopName = $('#admin-shopname').value || 'Mahawa Shop';
+        STATE.paymentPhone = $('#admin-phone').value || DEFAULT_PAYMENT_PHONE; saveState(); document.title = STATE.shopName; $('#shop-name-foot').textContent = STATE.shopName; alert('Paramètres sauvegardés.'); renderProducts(); closeModal();
+      })
+
+      $('#export-json').addEventListener('click', ()=>{
+        const dataStr = JSON.stringify(STATE.products,null,2);
+        const blob = new Blob([dataStr],{type:'application/json'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = 'mahawa_products.json'; a.click(); URL.revokeObjectURL(url);
+      })
+
+      $('#import-json').addEventListener('click', ()=>{
+        const html2 = `<div>Collez le JSON des produits ici:<br/><textarea id="import-area" style="width:100%;height:160px"></textarea><div style="display:flex;gap:8px;margin-top:8px"><button id="do-import" class="btn-primary">Importer</button><button onclick="closeModal()" class="btn-ghost">Annuler</button></div></div>`;
+        $('#modal-box').innerHTML = html2;
+        $('#do-import').addEventListener('click', ()=>{
+          try{ const arr = JSON.parse($('#import-area').value); if(!Array.isArray(arr)) throw 'Format invalide'; STATE.products = arr; saveState(); renderCategories(); renderProducts(); alert('Import réussi'); closeModal(); }catch(e){alert('Erreur d import: '+e)}
+        })
+      })
+
+      function refreshAdminProducts(){
+        const list = $('#admin-products-list'); list.innerHTML='';
+        STATE.products.forEach(p=>{
+          const div = document.createElement('div'); div.style.display='flex'; div.style.justifyContent='space-between'; div.style.alignItems='center'; div.style.padding='8px 0';
+          div.innerHTML = `<div><strong>${escapeHtml(p.title)}</strong><div class="small">${escapeHtml(p.category)} — ${formatNumber(p.price)} GNF</div></div>
+            <div style="display:flex;gap:6px"><button class="btn-ghost" onclick='editProduct(${p.id})'>Éditer</button><button class="btn-ghost" onclick='deleteProduct(${p.id})'>Supprimer</button></div>`;
+          list.appendChild(div);
+        })
+      }
+
+      $('#admin-add-new').addEventListener('click', ()=>newProductForm());
+      refreshAdminProducts();
+
+      window.editProduct = function(id){ const p = STATE.products.find(x=>x.id===id); if(!p) return; newProductForm(p) }
+      window.deleteProduct = function(id){ if(!confirm('Supprimer ce produit ?')) return; STATE.products = STATE.products.filter(x=>x.id!==id); saveState(); renderProducts(); openAdminPanel(); }
+    }
+
+    function newProductForm(p=null){
+      const html = `
+        <h3>${p? 'Éditer produit':'Nouveau produit'}</h3>
+        <label>Titre <input id="prod-title" value="${p?escapeHtml(p.title):''}"/></label>
+        <label>Catégorie <input id="prod-cat" value="${p?escapeHtml(p.category):''}"/></label>
+        <label>Prix (GNF) <input id="prod-price" type="number" value="${p?p.price:1000}"/></label>
+        <label>Image (URL) <input id="prod-img" value="${p?escapeHtml(p.img):'https://images.unsplash.com/photo-1520975923436-5e1b0c1f12d9?q=80&w=800&auto=format&fit=crop&crop=faces'}"/></label>
+        <label>Description <textarea id="prod-desc">${p?escapeHtml(p.description||''):''}</textarea></label>
+        <div style="display:flex;gap:8px;margin-top:8px"><button id="save-prod" class="btn-primary">Sauvegarder</button><button class="btn-ghost" onclick="openAdminPanel()">Annuler</button></div>
+      `; $('#modal-box').innerHTML = html;
+      $('#save-prod').addEventListener('click', ()=>{
+        const title = $('#prod-title').value.trim(); const cat = $('#prod-cat').value.trim(); const price = parseInt($('#prod-price').value)||0; const img = $('#prod-img').value.trim(); const desc = $('#prod-desc').value.trim();
+        if(!title){alert('Titre requis');return}
+        if(p){ // edit
+          p.title=title;p.category=cat;p.price=price;p.img=img;p.description=desc;
+        }else{
+          const id = Date.now(); STATE.products.push({id,title,category:cat,price,img,description:desc});
+        }
+        saveState(); renderCategories(); renderProducts(); alert('Produit sauvegardé'); openAdminPanel();
+      })
+    }
+
+    // cart panel toggles
+    $('#open-cart').addEventListener('click', ()=>{ const panel = $('#cart-panel'); panel.style.display = panel.style.display==='none' || panel.style.display==='' ? 'block' : 'none'; renderCart() })
+    // search and filters
+    $('#search').addEventListener('input', ()=>renderProducts()); $('#category-filter').addEventListener('change', ()=>renderProducts());
+
+    // checkout
+    $('#checkout-btn').addEventListener('click', ()=>{
+      if(Object.keys(STATE.cart).length===0){ alert('Panier vide'); return }
+      const html = `<h3>Commander</h3>
+        <div class="small">Total: <strong>${$('#cart-total').textContent} GNF</strong></div>
+        <label>Nom complet <input id="cname"/></label>
+        <label>Téléphone <input id="cphone" placeholder="+224..."/></label>
+        <label>Adresse / Remarques <textarea id="caddr"></textarea></label>
+        <div style="display:flex;gap:8px;margin-top:8px"><button id="do-checkout" class="btn-primary">Valider la commande</button><button class="btn-ghost" onclick="closeModal()">Annuler</button></div>
+      `;
+      showModal(html);
+      $('#do-checkout').addEventListener('click', ()=>{
+        const name = $('#cname').value.trim(); const phone = $('#cphone').value.trim(); if(!name||!phone){alert('Nom et téléphone requis');return}
+        // create simple order payload
+        const order = {id:Date.now(),customer:{name,phone,notes:$('#caddr').value||''},items:[],total:$('#cart-total').textContent,paymentPhone:STATE.paymentPhone}
+        for(const idStr of Object.keys(STATE.cart)){
+          const id = parseInt(idStr); const qty = STATE.cart[id]; const p = STATE.products.find(x=>x.id===id); if(!p) continue; order.items.push({id:p.id,title:p.title,price:p.price,qty});
+        }
+        // For demo: just show payment instructions
+        closeModal();
+        showModal(`<h3>Commande reçue</h3>
+          <div class="small">Merci ${escapeHtml(name)}. Votre commande (#${order.id}) total <strong>${order.total} GNF</strong> a été créée en mode demo.</div>
+          <div style="margin-top:10px">Effectuez le paiement vers le numéro suivant :</div>
+          <div style="margin-top:8px;font-weight:800">${escapeHtml(order.paymentPhone)}</div>
+          <div class="small" style="margin-top:8px">Après paiement, envoyez la preuve au numéro ci-dessus ou contactez le vendeur pour confirmer. (Intégration vraie à configurer côté serveur/payment gateway.)</div>
+          <div style="margin-top:12px"><button class="btn-primary" onclick="closeModal();STATE.cart={};saveState();renderCart();">Terminer</button></div>
+        `)
+      })
+    })
+
+    // init
+    document.title = STATE.shopName; $('#shop-name-foot').textContent = STATE.shopName; renderCategories(); renderProducts(); renderCart();
+
+  </script>
+</body>
+</html>
